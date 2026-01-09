@@ -1,0 +1,3 @@
+/home/shenyl/hf/model/Qwen/Qwen2.5-Coder-1.5B-Instruct
+/home/shenyl/hf/model/Qwen/Qwen2.5-Coder-3B-Instruct
+/home/shenyl/hf/model/Qwen/Qwen2.5-Coder-7B-Instruct

@@ -57,8 +57,8 @@ def mutation_statistic_wrapper(benchmark_name, model_name, num_test_cases, task)
     return statistic_info
 
 
-def mutation_statistic(benchmark_name, model_generation_file, num_test_cases, baseline_test_cases=5):
-    model_name = model_generation_file.split('/')[-1].split('.')[0]
+def mutation_statistic(benchmark_name, model_name, num_test_cases, baseline_test_cases=5):
+    print(f'Model {model_name} mutation statistic:')
     
     correct_tasks = list()
     correct_tasks_path = f'data/{benchmark_name}/correct_tasks_tc_{baseline_test_cases}_{model_name}'
@@ -69,29 +69,34 @@ def mutation_statistic(benchmark_name, model_generation_file, num_test_cases, ba
             
     print(f'[+] ✅ Correct Tasks: {len(correct_tasks)}')
     
-    filtered_tasks = import_filtered_tasks(benchmark_name)
-    print(f'[+] ✅ Filtered Tasks: {len(filtered_tasks)}')
-    final_tasks = list(set(correct_tasks) & set(filtered_tasks))
-    print(f'[+] ✅ Final Tasks: {len(final_tasks)}')
+    # filtered_tasks = import_filtered_tasks(benchmark_name)
+    # print(f'[+] ✅ Filtered Tasks: {len(filtered_tasks)}')
+    # final_tasks = list(set(correct_tasks) & set(filtered_tasks))
+    # print(f'[+] ✅ Final Tasks: {len(final_tasks)}')
     
-    # final_tasks = correct_tasks
+    final_tasks = correct_tasks
     
     surviving_mutants_rate = 0.0
 
     statistics = process_map(mutation_statistic_wrapper, [benchmark_name]*len(final_tasks), [model_name]*len(final_tasks), [num_test_cases]*len(final_tasks), final_tasks, desc=f"[+] 🔄 Running mutation ({num_test_cases} test cases) statistics...", chunksize=1)
     for statistic in statistics:
-        print(f"[+] {statistic}")
+        # print(f"[+] {statistic}")
         surviving_mutants_rate += statistic["surviving_mutants_rate"]
     
     surviving_mutants_rate = (surviving_mutants_rate / len(correct_tasks)) if len(correct_tasks) > 0 else 0.0
-    print(f'[+] ✅ Surviving Mutants Rate: {surviving_mutants_rate:.2%} \n')
+    print(f'[+] ✅ Surviving Mutants Rate: {surviving_mutants_rate:.2%}')
+    print(f'[+] ✅ Mut@{num_test_cases}: {(1.0 - surviving_mutants_rate):.2%} \n')
 
     return surviving_mutants_rate
 
 
 if __name__ == '__main__':
-    benchmark_name = 'testbench'
-    num_test_cases = 5
+    benchmark_name = 'ULT'
+    # num_test_cases = 5
     baseline_test_cases = 5
-    model_generation_file_path = 'data/testbench_generation/TestBench_CodeLlama-7b-Instruct-hf_mutants.jsonl'
-    surviving_mutants_rate = mutation_statistic(benchmark_name, model_generation_file_path, num_test_cases, baseline_test_cases)
+    with open('models.txt', 'r', encoding='utf-8') as f:
+        model_list = f.read().splitlines()
+    models = [model.split('/')[-1] for model in model_list]
+    for model_name in models:
+        for num_test_cases in [1,2,5]:
+            mutation_statistic(benchmark_name, model_name, num_test_cases, baseline_test_cases)

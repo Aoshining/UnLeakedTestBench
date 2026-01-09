@@ -10,7 +10,12 @@ import torch
 from vllm import LLM, SamplingParams
 from transformers import AutoTokenizer
 
-from data_utils import read_jsonl, write_jsonl, add_lineno
+# from data_utils import read_jsonl, write_jsonl, add_lineno
+def write_jsonl(data, file_path):
+    """将列表写入 jsonl 文件"""
+    with open(file_path, 'w', encoding='utf-8') as f:
+        for entry in data:
+            f.write(json.dumps(entry) + '\n')
 
 def extract_function_names_from_completion(completion: str) -> list:
     """Extract function names from the completion code."""
@@ -25,32 +30,13 @@ def parse_args():
     parser = ArgumentParser()
     parser.add_argument("--dataset", type=str, default='leetcode')
     parser.add_argument("--model", type=str, default='codellama/CodeLlama-7b-Instruct-hf')
-    parser.add_argument("--num_tests", type=int, default=20, help='number of tests generated per program')
+    parser.add_argument("--num_tests", type=int, default=5, help='number of tests generated per program')
     parser.add_argument("--temperature", type=float, default=0)  # 最小设置为0.01，避免数值错误
     parser.add_argument("--max_tokens", type=int, default=1024)
-    parser.add_argument("--batch_size", type=int, default=128, help='batch size for inference')
-    parser.add_argument("--tensor_parallel_size", type=int, default=2, help='number of GPUs for tensor parallelism')
+    parser.add_argument("--batch_size", type=int, default=256, help='batch size for inference')
+    parser.add_argument("--tensor_parallel_size", type=int, default=4, help='number of GPUs for tensor parallelism')
     parser.add_argument("--max_context_length", type=int, default=4096, help='maximum context length for truncation')
     return parser.parse_args()
-
-model_list = [
-    # "codellama/CodeLlama-7b-Instruct-hf",
-    # "ByteDance-Seed/Seed-Coder-8B-Instruct",
-    "google/gemma-3-4b-it", 
-    # "google/gemma-3-12b-it", 
-    # "google/gemma-3-27b-it",
-    "Qwen/Qwen2.5-Coder-7B-Instruct", 
-    # "Qwen/Qwen2.5-Coder-14B-Instruct", 
-    # "Qwen/Qwen2.5-Coder-32B-Instruct",
-    # 'deepseek-ai/deepseek-coder-1.3b-instruct', 
-    'deepseek-ai/deepseek-coder-6.7b-instruct', 
-    'deepseek-ai/deepseek-coder-33b-instruct',
-    # "microsoft/Phi-4-mini-instruct", 
-    # "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
-    # "google/gemma-2-9b-it",
-    # "google/gemma-2-27b-it",
-    # "meta-llama/CodeLlama-70b-Instruct-hf",
-]
 
 def truncate_conversation(messages, tokenizer, max_length):
     """截断对话历史，确保总长度不超过 max_length"""
@@ -258,9 +244,11 @@ if __name__=='__main__':
     output_dir = Path('results')
     output_dir.mkdir(exist_ok=True)
     
-    access_token = os.getenv("HUGGINGFACE_TOKEN")
-    with open("../dataset/ULT.jsonl","r") as f:
+    with open("../datasets/ULT.jsonl","r") as f:
         dataset = json.load(f)
+
+    with open('../models.txt', 'r', encoding='utf-8') as f:
+        model_list = f.read().splitlines()
 
     prompt_template = open('prompt/template_base.txt').read()
     system_template = open('prompt/system.txt').read()
@@ -272,14 +260,13 @@ if __name__=='__main__':
         print('='*50)
         print(f'Model: {model_abbrv}')
         print('='*50)
-        if os.path.exists(output_dir / f'TestBench_{model_abbrv}_{args.num_tests}_full.jsonl'):
+        if os.path.exists(output_dir / f'{model_abbrv}_{args.num_tests}.jsonl'):
             print(f"Results for {model_abbrv} already exist, skipping...")
             continue
         try:
             # 加载 tokenizer 用于格式化提示词
             tokenizer = AutoTokenizer.from_pretrained(
                 args.model, 
-                use_auth_token=access_token,
                 trust_remote_code=True
             )
             
@@ -312,10 +299,8 @@ if __name__=='__main__':
             )
             
             # 保存结果
-            write_jsonl(testing_results, output_dir / f'TestBench_{model_abbrv}_{args.num_tests}_full.jsonl')
-            print(f"Results saved to {output_dir}/TestBench_{model_abbrv}_{args.num_tests}_full.jsonl")
-            # write_jsonl(testing_results, output_dir / f'TestBench_{model_abbrv}.jsonl')
-            # print(f"Results saved to {output_dir}/TestBench_{model_abbrv}.jsonl")
+            write_jsonl(testing_results, output_dir / f'{model_abbrv}.jsonl')
+            print(f"Results saved to {output_dir}/{model_abbrv}.jsonl")
 
         except Exception as e:
             print(f"Error during test generation with model {model_abbrv}: {e}")
