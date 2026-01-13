@@ -1,8 +1,12 @@
 import json
 import os
 import sys
+import re
 import argparse
+import subprocess
+import wandb
 from collections import defaultdict
+from tqdm.contrib.concurrent import process_map
 
 def analyze_test_at_k_results(input_file, model_name=None, k_values=None, global_results=None):
     """分析Test@k结果，使用新的计算方式聚合各指标"""
@@ -47,9 +51,7 @@ def analyze_test_at_k_results(input_file, model_name=None, k_values=None, global
             pass
     
     # 计算最终指标
-    final_metrics = {
-        'model_name': model_name
-    }
+    final_metrics = {}
 
     # 计算通过率
     for k in k_values:
@@ -83,8 +85,69 @@ def analyze_test_at_k_results(input_file, model_name=None, k_values=None, global
         covered = aggregated_metrics[metrics_key]['covered_branches']
         total = aggregated_metrics[metrics_key]['total_branches']
         final_metrics[metrics_key] = (100 * covered / total if total > 0 else 0)
-    print(final_metrics)
     return final_metrics
+
+def mutation_statistic_wrapper(benchmark_name, model_name, num_test_cases, task):
+    working_dir = f'data/{benchmark_name}/mutation_{num_test_cases}/{model_name}/{task}'
+
+    statistic_info = {
+        "task": task,
+        "complete_rate": 0.0,
+        "surviving_mutants_rate": 0.0,
+        "total_jobs_number": 0,
+        "completed_jobs_number": 0,
+        "surviving_mutants_number": 0
+    }
+
+    try:
+        response = subprocess.run(['cr-report', f'cosmic-ray.sqlite', '--show-pending'], cwd=working_dir, check=True, capture_output=True, text=True)
+    except Exception as e:
+        print(f'[-] Error @ [{working_dir}]: {e}')
+        return statistic_info
+
+    total_jobs_match = re.search(r"total jobs:\s*(\d+)", response.stdout)
+    completed_jobs_match = re.search(r"complete:\s*(\d+)\s*\(", response.stdout)
+    surviving_mutants_match = re.search(r"surviving mutants:\s*(\d+)\s*\(", response.stdout)
+
+    if total_jobs_match:
+        total_jobs_number = int(total_jobs_match.group(1))
+        statistic_info["total_jobs_number"] = total_jobs_number
+
+    if completed_jobs_match:
+        completed_jobs_number = int(completed_jobs_match.group(1))
+        statistic_info["completed_jobs_number"] = completed_jobs_number
+        
+    if surviving_mutants_match:
+        surviving_mutants_number = int(surviving_mutants_match.group(1))
+        statistic_info["surviving_mutants_number"] = surviving_mutants_number
+    
+    statistic_info['complete_rate'] = statistic_info['completed_jobs_number'] / statistic_info["total_jobs_number"] if statistic_info["total_jobs_number"] > 0 else 0
+    statistic_info['surviving_mutants_rate'] = (statistic_info['surviving_mutants_number'] / statistic_info['completed_jobs_number']) if statistic_info['completed_jobs_number'] > 0 else 0
+
+    return statistic_info
+
+
+def mutation_statistic(benchmark_name, model_name, num_test_cases, baseline_test_cases=5):
+    correct_tasks = list()
+    correct_tasks_path = f'data/{benchmark_name}/correct_tasks_tc_{baseline_test_cases}_{model_name}'
+    
+    with open(correct_tasks_path, 'r') as f:
+        for line in f.readlines():  
+            correct_tasks.append(line.strip())
+    
+    print(f'[+] ✅ Correct Tasks: {len(correct_tasks)}')
+    final_tasks = correct_tasks
+    
+    surviving_mutants_rate = 0.0
+
+    statistics = process_map(mutation_statistic_wrapper, [benchmark_name]*len(final_tasks), [model_name]*len(final_tasks), [num_test_cases]*len(final_tasks), final_tasks, desc=f"[+] 🔄 Running mutation ({num_test_cases} test cases) statistics...", chunksize=1)
+    for statistic in statistics:
+        # print(f"[+] {statistic}")
+        surviving_mutants_rate += statistic["surviving_mutants_rate"]
+    
+    surviving_mutants_rate = (surviving_mutants_rate / len(correct_tasks)) if len(correct_tasks) > 0 else 0.0
+
+    return (1.0 - surviving_mutants_rate) * 100
 
 def main():
     parser = argparse.ArgumentParser(description='Analyze Test@k results and generate formatted table.')
@@ -97,18 +160,23 @@ def main():
 
     k_values = [1,2,5]
     # print(f"Analyzing with k values: {k_values}")
+
+    wandb.init(project='UnLeankedTestBench', name=args.benchmark_name)
+    columns = ["Model"]
+    for k in k_values: columns.append(f"pass@{k}")
+    for k in k_values: columns.append(f"line_cov@{k}")
+    for k in k_values: columns.append(f"branch_cov@{k}")
+    for k in k_values: columns.append(f"mut@{k}")
+    wandb_table = wandb.Table(columns=columns)
     
     with open('models.txt', 'r', encoding='utf-8') as f:
         model_list = f.read().splitlines()
     models = [model.split('/')[-1] for model in model_list]
-    
-    results = {}
-
-    # with open(f"data/testbench/pytest_results/{model_name}.json", "r") as f:
-        # global_results = [json.loads(line) for line in f.readlines()]
-        # global_results = json.load(f)
 
     for model_name in models:
+        row_data_dict = {"Model": model_name}
+
+        # --- Pass@k LCov@k BCov@k ---
         input_file = f'data/{args.benchmark_name}/pytest_results/{model_name}.json'
         if not os.path.exists(input_file):
             print(f"{model_name} does not exists")
@@ -116,40 +184,31 @@ def main():
 
         try:
             result = analyze_test_at_k_results(input_file, model_name, k_values, global_results=None)
-            results[model_name] = result
-            # print(f"Successfully processed {input_file}")
+            row_data_dict.update(result)
         except Exception as e:
             print(f"Error processing {input_file}: {str(e)}")
-    
-    # # 打印格式化结果
-    # print("\n" + "="*50 + " RESULTS " + "="*50)
-    # print_formatted_results(results, k_values)
-    
-    for model_name in results.keys():
-        result_pass = []
-        result_line_cov = []
-        result_branch_cov = []
-        for key, value in results[model_name].items():
 
-            # if key!="model_name":
-            #     result.append(round(value,2))
-            # else:
-            #     result.append(value)
-            if key=="model_name":
-                result_pass.append(value)
-                result_line_cov.append(value)
-                result_branch_cov.append(value)
-            elif key.startswith("pass@"):
-                result_pass.append(round(value, 2))
-            elif key.startswith("line_cov@"):
-                result_line_cov.append(round(value, 2))
-            elif key.startswith("branch_cov@"):
-                result_branch_cov.append(round(value, 2))
-        # print(f"{model_name}:")
+        # --- Mut@k ---
+        try:
+            for k in k_values:
+                score = mutation_statistic(args.benchmark_name, model_name, k)
+                row_data_dict[f"mut@{k}"] = score
+        except Exception as e:
+            print(f"Error computing Mut@k: {str(e)}")
 
-        # print("pass_" + "&".join([str(i) for i in result_pass]) + "\\\\")
-        # print("line_cov_" + "&".join([str(i) for i in result_line_cov]) + "\\\\")
-        # print("branch_cov_" + "&".join([str(i) for i in result_branch_cov]) + "\\\\")
+        # --- Log ---
+        print(row_data_dict)
+        row_values = []
+        for col in columns:
+            val = row_data_dict.get(col, 0.0)
+            if isinstance(val, (int, float)):
+                row_values.append(round(val, 2))
+            else:
+                row_values.append(val)
+        wandb_table.add_data(*row_values)
+
+    wandb.log({f"ULT_Leaderboard": wandb_table})
+    wandb.finish()
 
 if __name__ == "__main__":
     main()

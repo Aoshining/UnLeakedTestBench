@@ -31,10 +31,10 @@ def parse_args():
     parser.add_argument("--dataset", type=str, default='leetcode')
     parser.add_argument("--model", type=str, default='codellama/CodeLlama-7b-Instruct-hf')
     parser.add_argument("--num_tests", type=int, default=5, help='number of tests generated per program')
-    parser.add_argument("--temperature", type=float, default=0)  # 最小设置为0.01，避免数值错误
+    parser.add_argument("--temperature", type=float, default=0.7)  # 最小设置为0.01，避免数值错误
     parser.add_argument("--max_tokens", type=int, default=1024)
-    parser.add_argument("--batch_size", type=int, default=256, help='batch size for inference')
-    parser.add_argument("--tensor_parallel_size", type=int, default=4, help='number of GPUs for tensor parallelism')
+    parser.add_argument("--batch_size", type=int, default=1024, help='batch size for inference')
+    parser.add_argument("--tensor_parallel_size", type=int, default=8, help='number of GPUs for tensor parallelism')
     parser.add_argument("--max_context_length", type=int, default=4096, help='maximum context length for truncation')
     return parser.parse_args()
 
@@ -162,7 +162,7 @@ def testgeneration_multiround_vllm(args, dataset, prompt_template, system_messag
     sampling_params = SamplingParams(
         temperature=args.temperature,
         max_tokens=args.max_tokens,
-        top_p=1.0,
+        top_p=0.95,
     )
     
     # First round: generate initial test for each sample
