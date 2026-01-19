@@ -210,3 +210,4 @@ data/ULT/*
 src/results/
 *results.txt
 !fixed_sample_10pct.json
+wandb/
