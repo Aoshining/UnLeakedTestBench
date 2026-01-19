@@ -6,9 +6,9 @@ for MODEL_NAME in "${MODELS[@]}"; do
     echo $PREFIX/ACG/testcase/rl/checkpoints/model_b/$MODEL_NAME
 done > $PREFIX/UnLeakedTestBench/models.txt
 cd $PREFIX/UnLeakedTestBench/src
-python generate_cov_hf.py
+uv run generate_cov_hf.py
 source $PREFIX/ACG/code/rl/run/set_env.sh
-python format.py
+uv run format.py
 cd $PREFIX/UnLeakedTestBench
-python Ray/main.py
-python print_results.py | tee results.txt
+uv run Ray/main.py
+uv run print_results.py | tee results.txt
