@@ -19,14 +19,6 @@ def extract_and_wrap_test(code, func_name):
         
         context_nodes = [] # 用于积累 import, helper func, 变量定义等上下文
         
-        # 检查节点是否是针对 func_name 的 assert
-        def is_target_assert(node, name):
-            if isinstance(node, ast.Assert):
-                for child in ast.walk(node):
-                    if isinstance(child, ast.Name) and child.id == name:
-                        return True
-            return False
-        
         # 将一组 AST 节点包裹进 def test_{func_name}
         def wrap_nodes_in_func(nodes, func_name):
             new_func = ast.FunctionDef(
@@ -40,29 +32,29 @@ def extract_and_wrap_test(code, func_name):
 
         for node in tree.body:
             if isinstance(node, ast.FunctionDef):
-                sliced_inner_body = []
+                assert_index = -1
+                for i, inner in enumerate(node.body):
+                    if isinstance(inner, ast.Assert):
+                        assert_index = i
+                        break
                 
-                for inner_node in node.body:
-                    sliced_inner_body.append(inner_node)
-                    if is_target_assert(inner_node, func_name):
-                        final_body = context_nodes + sliced_inner_body
-                        return wrap_nodes_in_func(final_body, func_name)
+                if assert_index != -1:
+                    node.body = node.body[:assert_index+1]
+                    final_body = context_nodes + [node]
+                    return ast.unparse(final_body)
                         
             elif isinstance(node, ast.Assert):
-                if is_target_assert(node, func_name):
-                    context_nodes.append(node)
-                    return wrap_nodes_in_func(context_nodes, func_name)
-                else:
-                    # 是 assert 但不是测我们要的函数，忽略（跳过该节点）
-                    continue
+                context_nodes.append(node)
+                return wrap_nodes_in_func(context_nodes, func_name)
             
             context_nodes.append(node)
 
     except Exception as e:
-        print(f"AST Error: {e}\n{code}")
+        pass
+        # print(f"AST Error: {e}\n{code}")
         
     # 如果遍历完都没找到，返回基础错误测试函数
-    return f"def test_wrong():\n    assert 1 == 0"
+    return "def test_wrong():\n    assert 1 == 0"
 
 # from data_utils import read_jsonl, write_jsonl
 def read_jsonl(path):
@@ -87,12 +79,8 @@ def change_function_name(code, new_name):
         # Find the first function definition and change its name
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef):
-                # if node.name!=new_name:
-                #     node.name = new_name
-                #     break
-                # else:
-                #     break
                 node.name = new_name
+                break
 
         # Convert the modified AST back to code
         new_code = ast.unparse(tree)
@@ -104,18 +92,7 @@ def change_function_name(code, new_name):
 def reformat_case_byrules(testcase, func_name, lang='python', idx=0):
     if testcase.startswith(' '): #remove extra indents (encountered in codellama, mistral-7b starts with one space...)
         testcase=textwrap.dedent(testcase)
-    lines=testcase.split('\n')
-
-    if lang=='python':
-        last_line=lines[-1] #if last line is not complete (due to token limit), remove it    
-        last_line=textwrap.dedent(last_line)
-        try:
-            compile(last_line,'<string>','exec')
-        except:
-            #print('imcomplete last line, remove it', last_line)
-            lines=lines[:-1] #last line cannot compile
-
-    testcase='\n'.join(lines)
+    testcase=extract_and_wrap_test(testcase, func_name)
     testcase=change_function_name(testcase, f'{func_name}_{idx}')
     return testcase
 
@@ -126,20 +103,26 @@ def remove_extra(testcase, func_name, lang='python'):
     lines=testcase.split('\n')
     func_startline=-1 #the line when test function starts (def test....)
     for i in range(len(lines)):
-        if lines[i].find('def test')>=0:
+        if lines[i].strip().startswith('def test'):
             func_startline=i
             break
     if func_startline>=0:
         test_endline=len(lines)
+        first_assert_line=len(lines)
         for i in range(len(lines)):
-            if lines[i].find(f'assert {func_name}')>=0: #first call to the function under test
+            if lines[i].strip().startswith(f'assert {func_name}'): #first call to the function under test
                 test_endline=i+1
                 break
-        new_testcase='\n'.join(lines[func_startline:test_endline])
+            if first_assert_line==len(lines) and lines[i].strip().startswith('assert '): #first assert
+                first_assert_line=i+1
+        if test_endline==len(lines):
+            new_testcase='\n'.join(lines[func_startline:first_assert_line])
+        else:
+            new_testcase='\n'.join(lines[func_startline:test_endline])
         return new_testcase
     else:
         matches = re.findall(r"```python(.*?)```", testcase, re.DOTALL)
-        return extract_and_wrap_test('\n'.join(matches), func_name)
+        return '\n'.join(matches)
 
 
 def reformat_line(datapath,newpath):
@@ -193,15 +176,19 @@ def reformat_branch(datapath,newpath):
     write_jsonl(formatted_data, newpath)
 
 
-def reformat_cov(datapath,newpath):
+def reformat_cov(datapath,newpath,gt):
     data=read_jsonl(datapath)
     formatted_data=[]
+    gt_data=[]
+    codes=[]
+    testcases_list=[]
     for e in data:
         #print(code)
         func_name=e['func_name']
         test_funcname=f'test_{func_name}'
         formatted_test_cases=[]
         testcases=e['tests']
+        codes.append(e['code'])
         for idx, testcase in enumerate(testcases):
             # print(testcase)
             extracted_testcase=remove_extra(testcase, func_name)
@@ -214,16 +201,36 @@ def reformat_cov(datapath,newpath):
             # print(reformatted_testcase)
             # print('<---------------------->')
             formatted_test_cases.append(reformatted_testcase)
+        testcases_list.append([testcase for testcase in formatted_test_cases if 'assert 1 == 0' not in testcase])
         e['tests']=formatted_test_cases
 
         formatted_data.append(e)
-    write_jsonl(formatted_data, newpath)
+    
+    if gt:
+        from tools import extract_all_test_cases, validate_and_fill_generated_testcases
+        assert_testcases=[]
+        for testcases in testcases_list:
+            assert_testcases.append(json.dumps({'assert_statements': extract_all_test_cases('\n'.join(testcases))}))
+        print('correcting test cases by ground truth...')
+        gt_testcases_list,_,_=validate_and_fill_generated_testcases(assert_testcases, codes)
+        for e, gt_testcases in zip(data, gt_testcases_list):
+            tests=[]
+            for i in range(0, len(gt_testcases)):
+                tests.append(f"def test_{e['func_name']}_{i}():\n    {gt_testcases[i]}")
+            for i in range(len(gt_testcases), len(e['tests'])):
+                tests.append(f"def test_{e['func_name']}_{i}():\n    assert 1 == 0")
+            e['tests']=tests
+            gt_data.append(e)
+        write_jsonl(gt_data, newpath)
+    else:
+        write_jsonl(formatted_data, newpath)
 
 
 def parse_args():
     parser = ArgumentParser()
     parser.add_argument("--path", type=str, default='')
     parser.add_argument("--mode", type=str, default='overall', choices=['line', 'branch', 'overall'])
+    parser.add_argument("--gt", type=bool, default=False)
     return parser.parse_args()
 
 
@@ -248,7 +255,7 @@ if __name__=='__main__':
             reformat_line(output_dir / args.path, output_dir / newpath)
         elif args.mode=='overall':
             print('reformat overall coverage')
-            reformat_cov(output_dir / args.path, output_dir / newpath)
+            reformat_cov(output_dir / args.path, output_dir / newpath, args.gt)
         elif args.mode=='branch':
             print('reformat branch coverage')
             reformat_branch(output_dir / args.path, output_dir / newpath)

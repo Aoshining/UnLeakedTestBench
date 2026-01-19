@@ -135,12 +135,12 @@ def mutation_statistic(benchmark_name, model_name, num_test_cases, baseline_test
         for line in f.readlines():  
             correct_tasks.append(line.strip())
     
-    print(f'[+] ✅ Correct Tasks: {len(correct_tasks)}')
+    # print(f'[+] ✅ Correct Tasks: {len(correct_tasks)}')
     final_tasks = correct_tasks
     
     surviving_mutants_rate = 0.0
 
-    statistics = process_map(mutation_statistic_wrapper, [benchmark_name]*len(final_tasks), [model_name]*len(final_tasks), [num_test_cases]*len(final_tasks), final_tasks, desc=f"[+] 🔄 Running mutation ({num_test_cases} test cases) statistics...", chunksize=1)
+    statistics = process_map(mutation_statistic_wrapper, [benchmark_name]*len(final_tasks), [model_name]*len(final_tasks), [num_test_cases]*len(final_tasks), final_tasks, desc=f"[+] 🔄 Running mutation ({num_test_cases} test cases) statistics...", chunksize=1, leave=False)
     for statistic in statistics:
         # print(f"[+] {statistic}")
         surviving_mutants_rate += statistic["surviving_mutants_rate"]
