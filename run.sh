@@ -11,5 +11,4 @@ source $PREFIX/ACG/code/rl/run/set_env.sh
 python format.py
 cd $PREFIX/UnLeakedTestBench
 python Ray/main.py
-export WANDB_MODE=offline
 python print_results.py | tee results.txt
