@@ -31,7 +31,7 @@ def parse_args():
     parser.add_argument("--dataset", type=str, default='leetcode')
     parser.add_argument("--model", type=str, default='codellama/CodeLlama-7b-Instruct-hf')
     parser.add_argument("--num_tests", type=int, default=5, help='number of tests generated per program')
-    parser.add_argument("--temperature", type=float, default=0.7)  # 最小设置为0.01，避免数值错误
+    parser.add_argument("--temperature", type=float, default=0)  # 最小设置为0.01，避免数值错误
     parser.add_argument("--max_tokens", type=int, default=4096)
     parser.add_argument("--batch_size", type=int, default=256, help='batch size for inference')
     parser.add_argument("--tensor_parallel_size", type=int, default=8, help='number of GPUs for tensor parallelism')
