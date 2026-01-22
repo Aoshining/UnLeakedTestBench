@@ -29,7 +29,7 @@ def extract_function_names_from_completion(completion: str) -> list:
 def parse_args():
     parser = ArgumentParser()
     parser.add_argument("--dataset", type=str, default='leetcode')
-    parser.add_argument("--model", type=str, default='codellama/CodeLlama-7b-Instruct-hf')
+    parser.add_argument("--model", type=str, default='')
     parser.add_argument("--num_tests", type=int, default=5, help='number of tests generated per program')
     parser.add_argument("--temperature", type=float, default=0)  # 最小设置为0.01，避免数值错误
     parser.add_argument("--max_tokens", type=int, default=4096)
@@ -249,6 +249,8 @@ if __name__=='__main__':
 
     with open('../models.txt', 'r', encoding='utf-8') as f:
         model_list = f.read().splitlines()
+    if args.model:
+        model_list = [args.model]
 
     prompt_template = open('prompt/template_base.txt').read()
     system_template = open('prompt/system.txt').read()
