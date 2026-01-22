@@ -34,7 +34,7 @@ def parse_args():
     parser.add_argument("--temperature", type=float, default=0)  # 最小设置为0.01，避免数值错误
     parser.add_argument("--max_tokens", type=int, default=4096)
     parser.add_argument("--batch_size", type=int, default=256, help='batch size for inference')
-    parser.add_argument("--tensor_parallel_size", type=int, default=8, help='number of GPUs for tensor parallelism')
+    parser.add_argument("--tensor_parallel_size", type=int, default=1, help='number of GPUs for tensor parallelism')
     parser.add_argument("--max_context_length", type=int, default=16384, help='maximum context length for truncation')
     return parser.parse_args()
 
