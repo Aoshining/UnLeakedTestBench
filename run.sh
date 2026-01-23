@@ -1,9 +1,13 @@
 set -e
 
 export PREFIX=$(realpath "$(dirname "$0")/..")
-MODELS=("1.5B_A1_0_noSFT" "1.5B_A1_0.25_noSFT" "1.5B_A1_0.5_noSFT" "1.5B_A1_0.75_noSFT" "1.5B_A1_1.0_noSFT")
+MODELS=("1.5B_A1_0.5_noSFT_nocode" "3B_A1_0.5_noSFT" "3B_SP")
 for MODEL_NAME in "${MODELS[@]}"; do
-    echo $PREFIX/ACG/testcase/rl/checkpoints/model_b/$MODEL_NAME
+    if [[ $EXPERIMENT != *"SP"* ]]; then
+        echo $PREFIX/ACG/testcase/rl/checkpoints/model_b/$MODEL_NAME
+    else
+        echo $PREFIX/ACG/code/rl/checkpoints/model_a/$MODEL_NAME
+    fi
 done > $PREFIX/UnLeakedTestBench/models.txt
 cd $PREFIX/UnLeakedTestBench/src
 # 自动排队并行采样
@@ -15,7 +19,11 @@ for ((gpu_id=0; gpu_id<8; gpu_id++)); do
         # 例如 GPU 0 处理索引: 0, 8, 16...
         for ((i=gpu_id; i<${#MODELS[@]}; i+=8)); do
             MODEL_NAME="${MODELS[$i]}"
-            MODEL_PATH="$PREFIX/ACG/testcase/rl/checkpoints/model_b/$MODEL_NAME"
+            if [[ $EXPERIMENT != *"SP"* ]]; then
+                MODEL_PATH="$PREFIX/ACG/testcase/rl/checkpoints/model_b/$MODEL_NAME"
+            else
+                MODEL_PATH="$PREFIX/ACG/code/rl/checkpoints/model_a/$MODEL_NAME"
+            fi
             
             echo "[GPU $gpu_id] Starting task: $MODEL_NAME"
             
